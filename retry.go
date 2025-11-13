@@ -132,24 +132,28 @@ func shouldRetryError(err error) bool {
 	// Проверяем сетевые ошибки
 	var netErr net.Error
 	if errors.As(err, &netErr) {
-		// Повторяем только таймауты
 		if netErr.Timeout() {
 			return true
 		}
 	}
 
-	// Ошибки операционной сети, которые не реализуют Timeout()
+	// Ошибки операционной сети
 	var opErr *net.OpError
 	if errors.As(err, &opErr) {
 		return true
 	}
 
-	// URL ошибки (обертка над OpError или DNS)
+	// URL ошибки
 	var urlErr *url.Error
 	if errors.As(err, &urlErr) {
 		return true
 	}
 
-	// Остальные ошибки — не повторяем
+	// HTTP ошибки 5xx и 429
+	var httpErr *HTTPError
+	if errors.As(err, &httpErr) {
+		return httpErr.Temporary()
+	}
+
 	return false
 }
