@@ -18,10 +18,11 @@ const (
 
 // RetryConfig содержит параметры для повторных попыток
 type RetryConfig struct {
-	MaxAttempts int           // Максимальное количество попыток
-	MinDelay    time.Duration // Минимальная задержка
-	MaxDelay    time.Duration // Максимальная задержка
-	Logger      *slog.Logger  // Логгер (nil = логирование отключено)
+	MaxAttempts int              // Максимальное количество попыток
+	MinDelay    time.Duration    // Минимальная задержка
+	MaxDelay    time.Duration    // Максимальная задержка
+	Logger      *slog.Logger     // Логгер (nil = логирование отключено)
+	ShouldRetry func(error) bool // Определяет, стоит ли повторять
 }
 
 // RetryError представляет ошибку после всех неудачных попыток
@@ -70,6 +71,17 @@ func WithRetry[T any](
 					slog.Int("attempt", attempt))
 			}
 			return result, nil
+		}
+
+		// Проверка — повторять ли эту ошибку
+		if config.ShouldRetry != nil && !config.ShouldRetry(lastErr) {
+			if config.Logger != nil {
+				config.Logger.Warn("Retry aborted due to non-retriable error",
+					slog.String("operation", operationName),
+					slog.Int("attempt", attempt),
+					slog.Any("error", lastErr))
+			}
+			break
 		}
 
 		if config.Logger != nil {
