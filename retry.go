@@ -2,8 +2,11 @@ package retry
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
+	"net"
+	"net/url"
 	"time"
 
 	"github.com/alfzs/backoff"
@@ -58,6 +61,9 @@ func WithRetry[T any](
 	if config.MaxDelay <= 0 {
 		config.MaxDelay = DefaultMaxDelay
 	}
+	if config.ShouldRetry == nil {
+		config.ShouldRetry = shouldRetryError
+	}
 
 	var result T
 	var lastErr error
@@ -110,4 +116,40 @@ func WithRetry[T any](
 		Attempts:  config.MaxAttempts,
 		LastError: lastErr,
 	}
+}
+
+// shouldRetryError определяет, стоит ли повторять операцию при данной ошибке
+func shouldRetryError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	// Контекст отменён или дедлайн — не повторяем
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return false
+	}
+
+	// Проверяем сетевые ошибки
+	var netErr net.Error
+	if errors.As(err, &netErr) {
+		// Повторяем только таймауты
+		if netErr.Timeout() {
+			return true
+		}
+	}
+
+	// Ошибки операционной сети, которые не реализуют Timeout()
+	var opErr *net.OpError
+	if errors.As(err, &opErr) {
+		return true
+	}
+
+	// URL ошибки (обертка над OpError или DNS)
+	var urlErr *url.Error
+	if errors.As(err, &urlErr) {
+		return true
+	}
+
+	// Остальные ошибки — не повторяем
+	return false
 }
